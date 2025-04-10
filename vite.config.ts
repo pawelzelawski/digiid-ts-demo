@@ -6,9 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Proxy /api requests to the backend server (running on port 3001 by default)
+      // Proxy /api requests to the backend server (running on port 3000 now)
       '/api': {
-        target: 'http://localhost:3001', // Default backend port, adjust if needed
+        target: 'http://localhost:3000', // Adjust to match backend PORT from .env
         changeOrigin: true, // Recommended for virtual hosted sites
         secure: false, // Don't verify SSL certs if backend uses self-signed cert in dev
       },

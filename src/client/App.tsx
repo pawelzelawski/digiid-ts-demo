@@ -99,7 +99,7 @@ function App() {
     setQrCodeDataUrl(null); // Clear previous QR code if any
     setSessionId(null);
     setResultData(null);
-    console.log('Requesting new DigiID session...');
+    console.log('Requesting new Digi-ID session...');
 
     try {
       const response = await fetch('/api/digiid/start');
@@ -113,9 +113,9 @@ function App() {
       setQrCodeDataUrl(data.qrCodeDataUrl);
       setUiState('waiting'); // Move to waiting state
     } catch (err) {
-      console.error('Error starting DigiID session:', err);
+      console.error('Error starting Digi-ID session:', err);
       const message = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(`Failed to initiate DigiID: ${message}`);
+      setError(`Failed to initiate Digi-ID: ${message}`);
       setUiState('initial'); // Stay in initial state on error
     } finally {
       setIsLoading(false);
@@ -135,57 +135,70 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1>DigiID-TS Demo</h1>
+      <h1>Digi-ID TypeScript Integration Demo</h1>
 
-      {/* --- Initial State --- */} 
+      {/* --- Views based on uiState --- */}
       {uiState === 'initial' && (
         <div className="initial-view">
-          <h2>Welcome</h2>
-          <p>Click the button below to generate a DigiID login QR code.</p>
-          {/* TODO: Add Icon here */}
-          {/* <img src="/assets/YOUR_ICON_FILENAME.png" alt="DigiID Icon" width="100" /> */}
-          <button onClick={handleStart} disabled={isLoading}>
-            {isLoading ? 'Generating QR...' : 'Start DigiID Login'}
+          <button onClick={handleStart} disabled={isLoading} className="signin-button">
+            <img src="/assets/digiid-logo.png" alt="Digi-ID Logo" width="24" height="24" />
+            <span>{isLoading ? 'Generating QR...' : 'Sign in with Digi-ID'}</span>
           </button>
         </div>
       )}
 
-      {/* --- Waiting State --- */} 
-      {uiState === 'waiting' && qrCodeDataUrl && (
-        <div className="waiting-view">
-          <h2>Scan the QR Code</h2>
-          <p>Scan the QR code below using your DigiID compatible mobile wallet.</p>
-          <img src={qrCodeDataUrl} alt="DigiID QR Code" width="250" />
-          <p>Waiting for authentication...</p>
-          {/* Optional: Add a cancel button here */} 
-          <button onClick={handleReset}>Cancel</button>
+      {uiState !== 'initial' && (
+        <div className="view-container">
+          {uiState === 'waiting' && qrCodeDataUrl && (
+            <div className="waiting-view view-box">
+              <h2>Scan the QR Code</h2>
+              <p>Scan the QR code below using your Digi-ID compatible mobile wallet.</p>
+              <img src={qrCodeDataUrl} alt="Digi-ID QR Code" width="250" />
+              <p>Waiting for authentication...</p>
+              <button onClick={handleReset}>Cancel</button>
+            </div>
+          )}
+
+          {uiState === 'success' && resultData?.address && (
+            <div className="success-view view-box">
+              <svg xmlns="http://www.w3.org/2000/svg" className="checkmark-icon" viewBox="0 0 52 52">
+                <circle className="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
+                <path className="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+              </svg>
+              <h2>Authentication Successful!</h2>
+              <p>Verified Address:</p>
+              <p className="address">{resultData.address}</p>
+              <p>Address Format: {getDigiByteAddressType(resultData.address)}</p>
+              <button onClick={handleReset}>Start Over</button>
+            </div>
+          )}
+
+          {uiState === 'failed' && (
+            <div className="failed-view view-box">
+              <h2>Authentication Failed</h2>
+              <p className="error-message">
+                Reason: {resultData?.error || error || 'An unknown error occurred.'}
+              </p>
+              <button onClick={handleReset}>Try Again</button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* --- Success State --- */} 
-      {uiState === 'success' && resultData?.address && (
-        <div className="success-view">
-          <h2>Authentication Successful!</h2>
-          <p>Verified Address:</p>
-          <p className="address">{resultData.address}</p>
-          <p>Address Type: {getDigiByteAddressType(resultData.address)}</p>
-          <button onClick={handleReset}>Start Over</button>
-        </div>
-      )}
-
-      {/* --- Failed State --- */} 
-      {uiState === 'failed' && (
-        <div className="failed-view">
-          <h2>Authentication Failed</h2>
-          <p className="error-message">
-            Reason: {resultData?.error || error || 'An unknown error occurred.'}
-          </p>
-          <button onClick={handleReset}>Try Again</button>
-        </div>
-      )}
-
-      {/* General error display (e.g., for initial start error) */} 
-      {error && uiState === 'initial' && <p className="error-message">Error: {error}</p>}
+      {/* --- Description section (Always visible below the view container) --- */}
+      <div className="description">
+        <p className="code-link">
+          This application demonstrates integrating Digi-ID authentication using the <a href="https://github.com/pawelzelawski/digiid-ts" target="_blank" rel="noopener noreferrer">digiid-ts</a> library.
+        </p>
+        <p>
+          Upon successful verification, the system can identify the following DigiByte address formats:
+        </p>
+        <ul>
+          <li>Legacy Addresses (P2PKH) - starting with 'D'</li>
+          <li>Pay-to-Script-Hash Addresses (P2SH) - commonly starting with 'S'</li>
+          <li>Segregated Witness (SegWit) Addresses - starting with 'dgb1'</li>
+        </ul>
+      </div>
     </div>
   );
 }

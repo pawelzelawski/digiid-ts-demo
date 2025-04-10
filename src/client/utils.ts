@@ -1,20 +1,31 @@
-// Simple utility to determine DigiByte address type based on prefix
+// Utility to determine DigiByte address type based on prefix
 
-export type DigiByteAddressType = 'DigiByte (DGB)' | 'DigiAsset (DGA)' | 'Unknown';
+export type DigiByteAddressFormat = 'Legacy (P2PKH)' | 'Script (P2SH)' | 'SegWit (Bech32)' | 'Unknown';
 
-export function getDigiByteAddressType(address: string | undefined | null): DigiByteAddressType {
+/**
+ * Determines the format of a DigiByte address based on its prefix.
+ * Note: P2SH addresses on DigiByte often start with 'S', but complex scripts
+ * might result in different prefixes. This function covers common cases.
+ * Legacy starts with 'D'. SegWit starts with 'dgb1'.
+ *
+ * @param address The DigiByte address string.
+ * @returns The determined address format.
+ */
+export function getDigiByteAddressType(address: string | undefined | null): DigiByteAddressFormat {
   if (!address) {
     return 'Unknown';
   }
   if (address.startsWith('dgb1')) {
-    return 'DigiByte (DGB)';
+    return 'SegWit (Bech32)';
   }
-  // Add other prefixes if DigiAssets use a distinct one, e.g., 'dga1'
-  // For now, assume non-DGB is DigiAsset, but this might need refinement
-  // depending on actual DigiAsset address formats.
-  else {
-    // Assuming DigiAssets might start differently or be the fallback
-    // This is a placeholder assumption.
-    return 'DigiAsset (DGA)'; // Placeholder - ADJUST BASED ON ACTUAL DGA PREFIX
+  if (address.startsWith('S')) { // Common prefix for P2SH on DGB
+      return 'Script (P2SH)';
   }
+  if (address.startsWith('D')) {
+      return 'Legacy (P2PKH)';
+  }
+
+  // If it doesn't match known prefixes, return Unknown
+  // Could potentially add DigiAsset checks here if they have distinct prefixes
+  return 'Unknown';
 } 

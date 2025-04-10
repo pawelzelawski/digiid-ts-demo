@@ -2,8 +2,7 @@ import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import { randomBytes } from 'crypto';
 import qrcode from 'qrcode';
-// Import actual functions from the linked library
-import { generateDigiIDUri, verifyDigiIDCallback, DigiIDError } from 'digiid-ts';
+import { generateDigiIDUri, verifyDigiIDCallback } from 'digiid-ts';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -50,6 +49,7 @@ app.get('/api/digiid/start', async (req: Request, res: Response) => {
     }
 
     const unsecure = callbackUrl.startsWith('http://');
+    // Use the actual function from digiid-ts
     const digiIdUri = generateDigiIDUri({ callbackUrl, unsecure, nonce });
     console.log(`Generated DigiID URI: ${digiIdUri} for session ${sessionId}`);
 
@@ -62,11 +62,13 @@ app.get('/api/digiid/start', async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error in /api/digiid/start:', error);
-    // Check if it's a DigiIDError specifically from generateDigiIDUri
-    if (error instanceof DigiIDError) {
-        res.status(400).json({ error: `Failed to generate URI: ${error.message}` });
-    } else {
-        res.status(500).json({ error: 'Internal server error during start' });
+    // Ensure response is sent even on error
+    if (!res.headersSent) { // Check if response hasn't already been sent
+        if (error instanceof Error) {
+            res.status(400).json({ error: `Failed to generate URI: ${error.message}` });
+        } else {
+            res.status(500).json({ error: 'Internal server error during start' });
+        }
     }
   }
 });
@@ -112,46 +114,39 @@ app.post('/api/digiid/callback', async (req: Request, res: Response) => {
   // Retrieve the session *before* the try/finally block for verification
   const session = sessionStore.get(sessionId);
   if (!session) {
-      // This case should be rare if nonceToSessionMap is consistent
       console.error(`Critical: Session data missing for ${sessionId} despite nonce match.`);
-      return res.status(500).send('Internal server error: Session data missing.');
+      if (!res.headersSent) res.status(500).send('Internal server error: Session data missing.');
+      return; // Explicitly return void
   }
   if (session.status !== 'pending') {
       console.warn('Session already processed:', sessionId, session.status);
-      // Treat as success here, client will get final status via polling
-      return res.status(200).send('Session already processed.');
+      if (!res.headersSent) res.status(200).send('Session already processed.');
+      return; // Explicitly return void
   }
-
 
   // --- Verification ---
   let expectedCallbackUrl: string;
   try {
     const publicUrl = process.env.PUBLIC_URL;
-    if (!publicUrl) {
-        // Throw specific error to be caught below
-        throw new Error('PUBLIC_URL environment variable is not configured on the server.');
-    }
-    // Construct expected URL based on server config *at time of verification*
+    if (!publicUrl) throw new Error('PUBLIC_URL environment variable is not configured on the server.');
     expectedCallbackUrl = new URL('/api/digiid/callback', publicUrl).toString();
   } catch (error) {
-    // Handle errors during expected URL construction (e.g., invalid PUBLIC_URL)
     console.error('Server configuration error constructing expected callback URL:', error);
     session.status = 'failed';
     session.error = 'Server configuration error preventing verification.';
-    // Update store immediately on this specific failure
     sessionStore.set(sessionId, session);
-    // Respond 200 OK as per protocol, but status endpoint will show the config error
-    return res.status(200).send();
+    // Respond 200 OK as per protocol
+    if (!res.headersSent) res.status(200).send();
+    return; // Explicitly return void
   }
 
   const verifyOptions = { expectedCallbackUrl, expectedNonce: session.nonce };
 
   try {
     console.log('Attempting to verify callback with:', { callbackData, verifyOptions });
-    // verifyDigiIDCallback throws DigiIDError on failure
     await verifyDigiIDCallback(callbackData, verifyOptions);
 
-    // Success case
+    // Success case (no throw from verifyDigiIDCallback)
     console.log(`Verification successful for session ${sessionId}, address: ${address}`);
     session.status = 'success';
     session.address = address; // Store the verified address
@@ -162,22 +157,22 @@ app.post('/api/digiid/callback', async (req: Request, res: Response) => {
     // Failure case (verifyDigiIDCallback threw an error)
     console.warn(`Verification failed for session ${sessionId}:`, error);
     session.status = 'failed';
-    if (error instanceof DigiIDError) {
-      session.error = error.message; // Use message from DigiIDError
-    } else if (error instanceof Error) {
-      session.error = `Unexpected verification error: ${error.message}`;
+    if (error instanceof Error) {
+      session.error = error.message;
     } else {
       session.error = 'An unknown verification error occurred.';
     }
     // Optionally cleanup nonce map on failure too, depending on policy
     // nonceToSessionMap.delete(session.nonce);
   } finally {
-    // Update store with final status (success/failed) and respond 200 OK
+    // Update store and respond 200 OK in all cases (after try/catch)
     sessionStore.set(sessionId, session);
     console.log(`Final session state for ${sessionId}:`, session);
-    // Wallet expects 200 OK regardless of internal success/fail.
-    // Client uses /status endpoint to get the actual result.
-    res.status(200).send();
+    // Ensure response is sent if not already done (e.g. in case of unexpected error before finally)
+    if (!res.headersSent) {
+        res.status(200).send();
+    }
+    // No explicit return needed here as it's the end of the function
   }
 });
 
@@ -186,10 +181,9 @@ app.get('/api/digiid/status/:sessionId', (req: Request, res: Response) => {
   const { sessionId } = req.params;
   const session = sessionStore.get(sessionId);
   if (!session) {
-    // Session ID is unknown or expired (and cleaned up)
-    return res.status(404).json({ status: 'not_found' });
+    res.status(404).json({ status: 'not_found' });
+    return; // Keep explicit return
   }
-  // Return only relevant fields to client
   const { status, address, error } = session;
   res.json({ status, address, error });
 });
