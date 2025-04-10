@@ -40,7 +40,7 @@ digiid-ts-demo/
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/digiid-ts-demo.git
+   git clone https://github.com/pawelzelawski/digiid-ts-demo.git
    cd digiid-ts-demo
    ```
 
