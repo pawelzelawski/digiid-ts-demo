@@ -6,7 +6,12 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev:backend": "nodemon --watch src/server --ext ts --exec \"node --loader ts-node/esm src/server/main.ts\""
+    "dev:frontend": "vite",
+    "dev:backend": "nodemon --watch src/server --ext ts --exec \"node --loader ts-node/esm src/server/main.ts\"",
+    "dev": "npm-run-all --parallel dev:frontend dev:backend",
+    "build": "tsc && vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
   },
   "repository": {
     "type": "git",
