@@ -2,6 +2,10 @@
 
 A demonstration application showcasing the integration of the [`digiid-ts`](https://github.com/pawelzelawski/digiid-ts) library for Digi-ID authentication. This project provides a simple, responsive web application with a React frontend and Express backend, demonstrating the complete Digi-ID authentication flow.
 
+## Live Demo
+
+You can view a live demo of this application deployed here: [https://digi-id.pzelawski.dev/](https://digi-id.pzelawski.dev/)
+
 ## Features
 
 - **Digi-ID Authentication**: Complete implementation of the Digi-ID authentication protocol

@@ -98,7 +98,6 @@ dist
 # Gatsby files
 .cache/
 # Add node_modules/ and logs to the ignore list if they aren't already there
-public
 .tmp
 .idea
 .vscode
