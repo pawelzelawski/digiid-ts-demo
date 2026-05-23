@@ -32,11 +32,6 @@ const defaultConfig: AppConfig = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
 };
 
-const isMainModule = () => {
-  if (!process.argv[1]) return false;
-  return import.meta.url === new URL(`file://${process.argv[1]}`).href;
-};
-
 export function createApp(configOverrides: Partial<AppConfig> = {}) {
   const config: AppConfig = { ...defaultConfig, ...configOverrides };
   const isProduction = config.nodeEnv === 'production';
@@ -310,6 +305,9 @@ export function startServer() {
   });
 }
 
-if (isMainModule()) {
+const shouldAutoStart =
+  process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true';
+
+if (shouldAutoStart) {
   startServer();
 }
