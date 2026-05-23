@@ -110,4 +110,7 @@ build/
 public/build/
 
 # SvelteKit build output
-.svelte-kit 
+.svelte-kit
+
+.codex
+.agents

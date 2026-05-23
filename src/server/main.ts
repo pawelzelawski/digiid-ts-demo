@@ -110,7 +110,7 @@ app.post(
       console.log('Received callback:', callbackData);
 
       // --- Nonce Extraction and Session Lookup ---
-      let receivedNonce: string | null = null;
+      let receivedNonce: string | null;
       try {
         // DigiID URIs need scheme replaced for standard URL parsing
         const parsableUri = uri.replace(/^digiid:/, 'http:');
