@@ -1,180 +1,245 @@
 import dotenv from 'dotenv';
-import express, { Request, Response, NextFunction } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { randomBytes } from 'crypto';
 import qrcode from 'qrcode';
 import { generateDigiIDUri, verifyDigiIDCallback } from 'digiid-ts';
 
-// Load environment variables from .env file
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+type SessionStatus = 'pending' | 'success' | 'failed';
 
-// In-memory storage for demo purposes
 interface SessionState {
   nonce: string;
-  status: 'pending' | 'success' | 'failed';
+  status: SessionStatus;
+  createdAt: number;
   address?: string;
   error?: string;
 }
-const sessionStore = new Map<string, SessionState>();
-const nonceToSessionMap = new Map<string, string>();
 
-// Middleware
-app.use(express.json());
+interface AppConfig {
+  publicUrl?: string;
+  sessionTtlMs: number;
+  maxSessions: number;
+  nodeEnv: string;
+}
 
-console.log('Server starting...');
-console.log(`Attempting to listen on port: ${PORT}`);
-console.log(`Configured PUBLIC_URL: ${process.env.PUBLIC_URL}`);
+const defaultConfig: AppConfig = {
+  publicUrl: process.env.PUBLIC_URL,
+  sessionTtlMs: Number.parseInt(process.env.SESSION_TTL_MS ?? '300000', 10),
+  maxSessions: Number.parseInt(process.env.MAX_SESSIONS ?? '1000', 10),
+  nodeEnv: process.env.NODE_ENV ?? 'development',
+};
 
-// Endpoint to initiate the DigiID authentication flow
-app.get(
-  '/api/digiid/start',
-  (req: Request, res: Response, next: NextFunction) => {
-    (async () => {
+const isMainModule = () => {
+  if (!process.argv[1]) return false;
+  return import.meta.url === new URL(`file://${process.argv[1]}`).href;
+};
+
+export function createApp(configOverrides: Partial<AppConfig> = {}) {
+  const config: AppConfig = { ...defaultConfig, ...configOverrides };
+  const isProduction = config.nodeEnv === 'production';
+
+  const sessionStore = new Map<string, SessionState>();
+  const nonceToSessionMap = new Map<string, string>();
+
+  const log = (...args: unknown[]) => {
+    if (!isProduction) {
+      console.log(...args);
+    }
+  };
+
+  const purgeExpiredSessions = () => {
+    const now = Date.now();
+    const expiredSessionIds: string[] = [];
+
+    for (const [sessionId, session] of sessionStore.entries()) {
+      if (now - session.createdAt > config.sessionTtlMs) {
+        expiredSessionIds.push(sessionId);
+      }
+    }
+
+    for (const sessionId of expiredSessionIds) {
+      const session = sessionStore.get(sessionId);
+      if (session) {
+        nonceToSessionMap.delete(session.nonce);
+      }
+      sessionStore.delete(sessionId);
+    }
+  };
+
+  const cleanupTimer = setInterval(purgeExpiredSessions, 60_000);
+  cleanupTimer.unref();
+
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(helmet());
+  app.use(express.json({ limit: '10kb' }));
+
+  const startLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 30,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { error: 'Too many start requests. Please try again shortly.' },
+  });
+
+  const callbackLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: 'Too many callback requests. Please try again shortly.',
+  });
+
+  const statusLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { error: 'Too many status requests. Please try again shortly.' },
+  });
+
+  app.get(
+    '/api/digiid/start',
+    startLimiter,
+    async (_req: Request, res: Response, _next: NextFunction) => {
+      purgeExpiredSessions();
+
+      if (sessionStore.size >= config.maxSessions) {
+        res.status(503).json({
+          error: 'Too many pending sessions. Please try again in a moment.',
+        });
+        return;
+      }
+
       try {
         const sessionId = randomBytes(16).toString('hex');
         const nonce = randomBytes(16).toString('hex');
 
-        const publicUrl = process.env.PUBLIC_URL;
-        if (!publicUrl) {
+        if (!config.publicUrl) {
           console.error('PUBLIC_URL environment variable is not set.');
-          return res.status(500).json({
+          res.status(500).json({
             error: 'Server configuration error: PUBLIC_URL is missing.',
           });
+          return;
         }
 
         let callbackUrl: string;
         try {
-          const baseUrl = new URL(publicUrl);
+          const baseUrl = new URL(config.publicUrl);
           callbackUrl = new URL('/api/digiid/callback', baseUrl).toString();
         } catch (error) {
-          console.error('Invalid PUBLIC_URL format:', publicUrl, error);
-          return res.status(500).json({
+          console.error('Invalid PUBLIC_URL format:', config.publicUrl, error);
+          res.status(500).json({
             error: 'Server configuration error: Invalid PUBLIC_URL format.',
           });
+          return;
         }
 
         const unsecure = callbackUrl.startsWith('http://');
-        // Use the actual function from digiid-ts
         const digiIdUri = generateDigiIDUri({ callbackUrl, unsecure, nonce });
-        console.log(
-          `Generated DigiID URI: ${digiIdUri} for session ${sessionId}`
-        );
-
-        sessionStore.set(sessionId, { nonce, status: 'pending' });
-        nonceToSessionMap.set(nonce, sessionId);
-        console.log(`Stored pending session: ${sessionId}, nonce: ${nonce}`);
-
         const qrCodeDataUrl = await qrcode.toDataURL(digiIdUri);
+
+        sessionStore.set(sessionId, {
+          nonce,
+          status: 'pending',
+          createdAt: Date.now(),
+        });
+        nonceToSessionMap.set(nonce, sessionId);
+        log(`Created DigiID session ${sessionId}.`);
+
         res.json({ sessionId, qrCodeDataUrl });
+        return;
       } catch (error) {
         console.error('Error in /api/digiid/start:', error);
-        // Ensure response is sent even on error
-        if (!res.headersSent) {
-          // Check if response hasn't already been sent
-          if (error instanceof Error) {
-            res
-              .status(400)
-              .json({ error: `Failed to generate URI: ${error.message}` });
-          } else {
-            res
-              .status(500)
-              .json({ error: 'Internal server error during start' });
-          }
+        if (error instanceof Error) {
+          res
+            .status(400)
+            .json({ error: `Failed to generate URI: ${error.message}` });
+          return;
         }
+        res.status(500).json({ error: 'Internal server error during start' });
+        return;
       }
-    })().catch(next);
-  }
-);
+    }
+  );
 
-// Callback endpoint for the DigiID mobile app
-app.post(
-  '/api/digiid/callback',
-  (req: Request, res: Response, next: NextFunction) => {
-    (async () => {
+  app.post(
+    '/api/digiid/callback',
+    callbackLimiter,
+    async (req: Request, res: Response, _next: NextFunction) => {
       const { address, uri, signature } = req.body;
 
-      // Basic validation of received data
-      if (!address || !uri || !signature) {
-        console.warn('Callback missing required fields.', {
-          address,
-          uri,
-          signature,
-        });
-        // Wallet doesn't expect a body on failure, just non-200. Status only for logging/debug.
-        return res.status(400).send('Missing required callback parameters.');
+      if (
+        typeof address !== 'string' ||
+        typeof uri !== 'string' ||
+        typeof signature !== 'string'
+      ) {
+        res.status(400).send('Missing required callback parameters.');
+        return;
       }
 
-      const callbackData = { address, uri, signature };
-      console.log('Received callback:', callbackData);
-
-      // --- Nonce Extraction and Session Lookup ---
       let receivedNonce: string | null;
       try {
-        // DigiID URIs need scheme replaced for standard URL parsing
         const parsableUri = uri.replace(/^digiid:/, 'http:');
         const parsedUri = new URL(parsableUri);
         receivedNonce = parsedUri.searchParams.get('x');
-      } catch (error) {
-        console.warn('Error parsing received URI:', uri, error);
-        return res.status(400).send('Invalid URI format.');
+      } catch {
+        res.status(400).send('Invalid URI format.');
+        return;
       }
 
       if (!receivedNonce) {
-        console.warn('Nonce (x parameter) not found in received URI:', uri);
-        return res.status(400).send('Nonce not found in URI.');
+        res.status(400).send('Nonce not found in URI.');
+        return;
       }
 
+      purgeExpiredSessions();
       const sessionId = nonceToSessionMap.get(receivedNonce);
       if (!sessionId) {
-        console.warn('Session not found for received nonce:', receivedNonce);
-        // Nonce might be expired or invalid
-        return res
-          .status(404)
-          .send('Session not found or expired for this nonce.');
+        res.status(404).send('Session not found or expired for this nonce.');
+        return;
       }
 
-      // Retrieve the session *before* the try/finally block for verification
       const session = sessionStore.get(sessionId);
       if (!session) {
-        console.error(
-          `Critical: Session data missing for ${sessionId} despite nonce match.`
-        );
-        if (!res.headersSent)
-          res.status(500).send('Internal server error: Session data missing.');
-        return; // Explicitly return void
-      }
-      if (session.status !== 'pending') {
-        console.warn('Session already processed:', sessionId, session.status);
-        if (!res.headersSent)
-          res.status(200).send('Session already processed.');
-        return; // Explicitly return void
+        res.status(500).send('Internal server error: Session data missing.');
+        return;
       }
 
-      // --- Verification ---
+      if (session.status !== 'pending') {
+        res.status(200).send('Session already processed.');
+        return;
+      }
+
+      if (!config.publicUrl) {
+        session.status = 'failed';
+        session.error = 'Server configuration error preventing verification.';
+        nonceToSessionMap.delete(session.nonce);
+        sessionStore.set(sessionId, session);
+        res.status(200).send();
+        return;
+      }
+
       let expectedCallbackUrl: string;
       try {
-        const publicUrl = process.env.PUBLIC_URL;
-        if (!publicUrl)
-          throw new Error(
-            'PUBLIC_URL environment variable is not configured on the server.'
-          );
         expectedCallbackUrl = new URL(
           '/api/digiid/callback',
-          publicUrl
+          config.publicUrl
         ).toString();
       } catch (error) {
         console.error(
-          'Server configuration error constructing expected callback URL:',
+          'Invalid PUBLIC_URL format while verifying callback:',
           error
         );
         session.status = 'failed';
         session.error = 'Server configuration error preventing verification.';
+        nonceToSessionMap.delete(session.nonce);
         sessionStore.set(sessionId, session);
-        // Respond 200 OK as per protocol
-        if (!res.headersSent) res.status(200).send();
-        return; // Explicitly return void
+        res.status(200).send();
+        return;
       }
 
       const verifyOptions = {
@@ -183,63 +248,68 @@ app.post(
       };
 
       try {
-        console.log('Attempting to verify callback with:', {
-          callbackData,
-          verifyOptions,
-        });
-        await verifyDigiIDCallback(callbackData, verifyOptions);
-
-        // Success case (no throw from verifyDigiIDCallback)
-        console.log(
-          `Verification successful for session ${sessionId}, address: ${address}`
-        );
+        await verifyDigiIDCallback({ address, uri, signature }, verifyOptions);
         session.status = 'success';
-        session.address = address; // Store the verified address
-        session.error = undefined; // Clear any previous error
-        nonceToSessionMap.delete(session.nonce); // Clean up nonce map only on success
+        session.address = address;
+        session.error = undefined;
+        nonceToSessionMap.delete(session.nonce);
       } catch (error) {
-        // Failure case (verifyDigiIDCallback threw an error)
-        console.warn(`Verification failed for session ${sessionId}:`, error);
         session.status = 'failed';
-        if (error instanceof Error) {
-          session.error = error.message;
-        } else {
-          session.error = 'An unknown verification error occurred.';
-        }
-        // Optionally cleanup nonce map on failure too, depending on policy
-        // nonceToSessionMap.delete(session.nonce);
-      } finally {
-        // Update store and respond 200 OK in all cases (after try/catch)
-        sessionStore.set(sessionId, session);
-        console.log(`Final session state for ${sessionId}:`, session);
-        // Ensure response is sent if not already done (e.g. in case of unexpected error before finally)
-        if (!res.headersSent) {
-          res.status(200).send();
-        }
-        // No explicit return needed here as it's the end of the function
+        session.error =
+          error instanceof Error
+            ? error.message
+            : 'An unknown verification error occurred.';
+        nonceToSessionMap.delete(session.nonce);
       }
-    })().catch(next);
-  }
-);
 
-// Endpoint to check the status of an authentication session
-app.get('/api/digiid/status/:sessionId', (req: Request, res: Response) => {
-  const { sessionId } = req.params;
-  const session = sessionStore.get(sessionId);
-  if (!session) {
-    res.status(404).json({ status: 'not_found' });
-    return; // Keep explicit return
-  }
-  const { status, address, error } = session;
-  res.json({ status, address, error });
-});
+      sessionStore.set(sessionId, session);
+      res.status(200).send();
+      return;
+    }
+  );
 
-// Simple root endpoint
-app.get('/', (_: Request, res: Response) => {
-  res.send('DigiID Demo Backend Running!');
-});
+  app.get(
+    '/api/digiid/status/:sessionId',
+    statusLimiter,
+    (req: Request, res: Response) => {
+      purgeExpiredSessions();
+      const { sessionId } = req.params;
+      const session = sessionStore.get(sessionId);
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+      if (!session) {
+        res.status(404).json({ status: 'not_found' });
+        return;
+      }
+
+      const { status, address, error } = session;
+      res.json({ status, address, error });
+      return;
+    }
+  );
+
+  app.get('/', (_req: Request, res: Response) => {
+    res.send('DigiID Demo Backend Running!');
+  });
+
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Unhandled server error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  return app;
+}
+
+export function startServer() {
+  const app = createApp();
+  const port = Number.parseInt(process.env.PORT ?? '3001', 10);
+
+  return app.listen(port, () => {
+    console.log(`Server listening on port ${port}`);
+  });
+}
+
+if (isMainModule()) {
+  startServer();
+}

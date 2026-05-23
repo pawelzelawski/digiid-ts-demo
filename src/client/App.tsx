@@ -8,7 +8,6 @@ type UiState = 'initial' | 'waiting' | 'success' | 'failed';
 interface ResultData {
   address?: string; // Present on success
   error?: string; // Present on failure
-  addressType?: string; // Added later
 }
 
 function App() {
@@ -169,6 +168,7 @@ function App() {
               {isLoading ? 'Generating QR...' : 'Sign in with Digi-ID'}
             </span>
           </button>
+          {error && <p className="error-message">Reason: {error}</p>}
         </div>
       )}
 
