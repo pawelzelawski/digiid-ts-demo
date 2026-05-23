@@ -36,7 +36,7 @@ digiid-ts-demo/
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
+- Node.js (v20.19.0 or higher)
 - npm or yarn
 - A DigiByte wallet that supports Digi-ID (e.g., DigiByte Go)
 
