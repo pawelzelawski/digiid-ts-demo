@@ -25,8 +25,7 @@ digiid-ts-demo/
 │   │   ├── main.tsx     # Frontend entry point
 │   │   └── index.css    # Global styles
 │   └── server/          # Express backend
-│       ├── main.ts      # Server entry point
-│       └── utils.ts     # Utility functions
+│       └── main.ts      # Server entry point
 ├── public/              # Static assets
 ├── .env                 # Environment variables
 └── package.json         # Project dependencies
@@ -54,10 +53,13 @@ digiid-ts-demo/
    ```
 
 3. Configure environment variables:
-   Create a `.env` file in the root directory with the following variables:
+   Create a `.env` file in the root directory (you can copy from `.env.example`) with the following variables:
    ```
    PORT=3001
-   PUBLIC_URL=https://your-domain.com
+   PUBLIC_URL=http://localhost:3001
+   VITE_API_PROXY_TARGET=http://localhost:3001
+   SESSION_TTL_MS=300000
+   MAX_SESSIONS=1000
    ```
 
 ### Running the Application
@@ -68,6 +70,13 @@ npm run dev
 ```
 
 This will start both the frontend and backend servers concurrently.
+
+### Running Tests
+
+```bash
+npm test
+npm run test:coverage
+```
 
 ## Authentication Flow
 
@@ -165,6 +174,9 @@ PUBLIC_URL=https://your-domain.com
 
 - `PORT`: Port number for the backend server (default: 3001)
 - `PUBLIC_URL`: The public URL of your application (required for callback handling)
+- `VITE_API_PROXY_TARGET`: Backend URL used by Vite dev proxy (default: `http://localhost:3001`)
+- `SESSION_TTL_MS`: Session expiration time in milliseconds (default: `300000`, i.e. 5 minutes)
+- `MAX_SESSIONS`: Maximum in-memory active sessions (default: `1000`)
 
 ## License
 

@@ -8,7 +8,13 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', '.eslintrc.cjs', 'vite.config.ts'],
+    ignores: [
+      'coverage/**',
+      'dist/**',
+      'node_modules/**',
+      '.eslintrc.cjs',
+      'vite.config.ts',
+    ],
   },
   {
     files: ['**/*.{ts,tsx}'],
