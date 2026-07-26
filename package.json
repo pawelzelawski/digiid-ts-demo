@@ -64,7 +64,7 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
-    "digiid-ts": "^3.0.1",
+    "digiid-ts": "^3.0.2",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
@@ -72,5 +72,13 @@
     "qrcode": "^1.5.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
+  },
+  "overrides": {
+    "body-parser": "2.3.0",
+    "eslint": {
+      "minimatch": {
+        "brace-expansion": "5.0.8"
+      }
+    }
   }
 }
