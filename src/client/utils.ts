@@ -1,10 +1,7 @@
 // Utility to determine DigiByte address type based on prefix
 
 export type DigiByteAddressFormat =
-  | 'Legacy (P2PKH)'
-  | 'Script (P2SH)'
-  | 'SegWit (Bech32)'
-  | 'Unknown';
+  'Legacy (P2PKH)' | 'Script (P2SH)' | 'SegWit (Bech32)' | 'Unknown';
 
 /**
  * Determines the format of a DigiByte address based on its prefix.
