@@ -119,4 +119,59 @@ describe('App', () => {
       screen.getByRole('button', { name: /sign in with digi-id/i })
     ).toBeInTheDocument();
   });
+
+  it('surfaces a status polling error when the error body is not JSON', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          sessionId: 'session-4',
+          qrCodeDataUrl: 'data:image/png;base64,qr',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error('not json');
+        },
+      });
+
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: /sign in with digi-id/i })
+    );
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/status polling failed: error fetching status/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 4000 }
+    );
+  });
+
+  it('uses a fallback message when the start error body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => {
+        throw new Error('not json');
+      },
+    });
+
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: /sign in with digi-id/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /failed to initiate digi-id: failed to start session\. server responded with status: 503/i
+        )
+      ).toBeInTheDocument();
+    });
+  });
 });

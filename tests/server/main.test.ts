@@ -189,4 +189,33 @@ describe('server api', () => {
     expect(status.statusCode).toBe(404);
     expect(statusBody.status).toBe('not_found');
   });
+
+  it('serves a health message on the root route', async () => {
+    const app = createApp({
+      publicUrl: 'http://localhost:3001',
+      nodeEnv: 'test',
+    });
+
+    const response = await inject(app, { method: 'GET', url: '/' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('DigiID Demo Backend Running!');
+  });
+
+  it('returns 500 when the request body is malformed JSON', async () => {
+    const app = createApp({
+      publicUrl: 'http://localhost:3001',
+      nodeEnv: 'test',
+    });
+
+    const response = await inject(app, {
+      method: 'POST',
+      url: '/api/digiid/callback',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"address": ',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toBe('Internal server error');
+  });
 });
