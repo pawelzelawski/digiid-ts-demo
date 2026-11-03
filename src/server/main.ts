@@ -266,7 +266,7 @@ export function createApp(configOverrides: Partial<AppConfig> = {}) {
   app.get(
     '/api/digiid/status/:sessionId',
     statusLimiter,
-    (req: Request, res: Response) => {
+    (req: Request<{ sessionId: string }>, res: Response) => {
       purgeExpiredSessions();
       const { sessionId } = req.params;
       const session = sessionStore.get(sessionId);
